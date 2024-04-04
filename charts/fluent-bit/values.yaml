@@ -297,7 +297,17 @@ terminationGracePeriodSeconds:
 
 priorityClassName: ""
 
-env: []
+env:
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom:
+      secretKeyRef:
+        name: aws
+        key: AWS_ACCESS_KEY_ID
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: aws
+        key: AWS_SECRET_ACCESS_KEY
 #  - name: FOO
 #    value: "bar"
 
@@ -365,17 +375,17 @@ config:
   inputs: |
     [INPUT]
         Name tail
-        Path /var/log/containers/*.log
+        Path /var/log/containers/mnode*.log,/var/log/containers/endpoints*.log,/var/log/containers/api*.log,/var/log/containers/sys-*.log,/var/log/containers/redis*.log
         multiline.parser docker, cri
         Tag kube.*
         Mem_Buf_Limit 5MB
         Skip_Long_Lines On
 
-    [INPUT]
-        Name systemd
-        Tag host.*
-        Systemd_Filter _SYSTEMD_UNIT=kubelet.service
-        Read_From_Tail On
+# [INPUT]
+#     Name systemd
+#     Tag host.*
+#     Systemd_Filter _SYSTEMD_UNIT=kubelet.service
+#     Read_From_Tail On
 
   ## https://docs.fluentbit.io/manual/pipeline/filters
   filters: |
@@ -390,19 +400,33 @@ config:
   ## https://docs.fluentbit.io/manual/pipeline/outputs
   outputs: |
     [OUTPUT]
-        Name es
-        Match kube.*
-        Host elasticsearch-master
-        Logstash_Format On
-        Retry_Limit False
+        Name s3
+        Match *
+        bucket membrane-logs
+        json_date_key false
+        Region us-east-1
+        s3_key_format /$TAG[4]/%Y-%m/%d/%H-%M-%S-$UUID.gz
+        s3_key_format_tag_delimiters ._
+        compression gzip
+        # Needed to get the S3 objects available for read faster, also because
+        # we currently don't have persistent storage for fluent-bit pods
+        use_put_object true
+        upload_timeout 5m
 
-    [OUTPUT]
-        Name es
-        Match host.*
-        Host elasticsearch-master
-        Logstash_Format On
-        Logstash_Prefix node
-        Retry_Limit False
+#   [OUTPUT]
+#       Name es
+#       Match kube.*
+#       Host elasticsearch-master
+#       Logstash_Format On
+#       Retry_Limit False
+
+#   [OUTPUT]
+#       Name es
+#       Match host.*
+#       Host elasticsearch-master
+#       Logstash_Format On
+#       Logstash_Prefix node
+#       Retry_Limit False
 
   ## https://docs.fluentbit.io/manual/administration/configuring-fluent-bit/classic-mode/upstream-servers
   ## This configuration is deprecated, please use `extraFiles` instead.
